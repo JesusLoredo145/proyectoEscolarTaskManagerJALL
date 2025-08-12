@@ -1,41 +1,32 @@
 <?php
-require_once 'db.php';
-
-header('Content-Type: application/json; charset=utf-8');
+require_once 'db.php'; // incluye el archivo con la conexion a la base de datos
+session_start(); // inicia la sesion para acceder a variables de sesion
+setJSONHeaders(); // configura las cabeceras para devolver respuestas en formato json
 
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        throw new Exception('Método no permitido');
+    if (!isset($_SESSION['user_id'])) { // verifica si no hay usuario autenticado
+        throw new Exception("Usuario no autenticado"); // lanza error si no esta logueado
     }
 
-    $input = json_decode(file_get_contents('php://input'), true);
+    $input = json_decode(file_get_contents("php://input"), true); // obtiene y decodifica los datos enviados en formato json
 
-    if (!isset($input['task']) || empty(trim($input['task']))) {
-        throw new Exception('La tarea no puede estar vacía');
+    if (!isset($input['task']) || trim($input['task']) === '') { // valida que el texto de la tarea exista y no este vacio
+        throw new Exception("El texto de la tarea no puede estar vacío"); // lanza error si la validacion falla
     }
 
-    $task = trim($input['task']);
+    $task = trim($input['task']); // limpia espacios extra en el texto de la tarea
+    $userId = $_SESSION['user_id']; // obtiene el id del usuario desde la sesion
 
-    if (strlen($task) > 255) {
-        throw new Exception('La tarea es demasiado larga (máximo 255 caracteres)');
-    }
+    $db = getDBConnection(); // obtiene la conexion a la base de datos
+    $query = "INSERT INTO tasks (user_id, text) VALUES (:user_id, :text)"; // consulta para insertar la nueva tarea
+    $stmt = $db->prepare($query); // prepara la consulta para evitar inyeccion sql
+    $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT); // vincula el id de usuario al parametro de la consulta
+    $stmt->bindParam(':text', $task); // vincula el texto de la tarea al parametro de la consulta
+    $stmt->execute(); // ejecuta la consulta
 
-    $pdo = getDBConnection();
+    sendJSONResponse(['success' => true]); // envia respuesta json indicando exito
 
-    $stmt = $pdo->prepare("INSERT INTO tasks (text, created_at) VALUES (?, NOW())");
-    $stmt->execute([$task]);
-
-    $taskId = $pdo->lastInsertId();
-
-    echo json_encode([
-        'success' => true,
-        'message' => 'Tarea agregada exitosamente',
-        'task_id' => $taskId
-    ]);
-} catch (Exception $e) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'message' => $e->getMessage()
-    ]);
+} catch (Exception $e) { // si ocurre algun error
+    handleError($e, "Error al agregar la tarea"); // maneja y envia el error en formato json
 }
+?>
